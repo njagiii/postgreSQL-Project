@@ -469,3 +469,534 @@ on p.product_id = s.product_id
 where (select count(*) from sales) < 100 and price > 200
 group by s.product_id;
 
+-- 51. Which customers have spent more than the average spending of all customers?
+select first_name, last_name, total_amount from customers c
+join sales s
+on c.customer_id = s.customer_id
+where total_amount > (select avg(total_amount) from sales s);
+
+-- 52. Which products are priced higher than the average price of all products?
+select product_name from  products
+where price > (select avg(price) from products);
+
+-- 53. Which customers have never made a purchase?
+
+select first_name, last_name, s.customer_id 
+from (select customer_id, first_name, last_name from customers c) as customer_table
+left join sales s
+on customer_table.customer_id = s.customer_id
+where s.customer_id is null;
+
+-- 54. Which products have never been sold?
+
+select product_name, s.product_id from 
+(select product_id, product_name from products p) as product_details
+left join sales s
+on product_details.product_id = s.product_id
+where s.product_id is null;
+
+-- 55. Which customer made the single most expensive purchase?
+select first_name, last_name, price from customers c
+join sales s
+on s.customer_id=c.customer_id
+join products p
+on s.product_id = p.product_id
+where price = (select max(price) from products);
+
+-- 56. Which products have total sales greater than the average total sales across all products?
+select product_name, total_amount from products p
+join sales s
+on s.product_id = p.product_id
+where total_amount > (select avg(total_amount) from sales)
+order by total_amount desc;
+
+-- 57. Which customers registered earlier than the average registration date?
+select first_name, last_name, registration_date from customers
+where registration_date < (select to_timestamp (avg(extract(epoch from registration_date))) from customers);
+
+-- 58. Which products have a price higher than the average price within their own category?
+
+select
+    product_id, product_name, category, price
+from (
+select product_id, product_name, category, price,
+        AVG(price) OVER (PARTITION BY category) AS avg_category_price
+    from products
+) as categorized
+where price > avg_category_price;
+--or
+select
+    p.product_id,
+    p.product_name,
+    p.category,
+    p.price
+from products p
+join (
+    select category, avg(price) as avg_category_price
+    from products
+    group by category
+) as category_avg
+on p.category = category_avg.category
+where p.price > category_avg.avg_category_price;
+
+
+-- 59. Which customers have spent more than the customer with ID = 10?
+select s.customer_id, first_name, last_name, total_amount from customers c
+join sales s
+on c.customer_id = s.customer_id
+where total_amount > (select total_amount from sales s where s.customer_id = 10);
+
+-- 60. Which products have total quantity sold greater than the overall average quantity sold?
+select product_name, quantity_sold from sales s
+join (select product_id, sum(quantity_sold) from sales
+group by product_id) as total_quant
+on total_quant.product_id = s.product_id
+join products p
+on p.product_id = s.product_id
+where total_quant.sum > (select avg(quantity_sold) from sales s);
+
+-- =====================================================
+-- COMMON TABLE EXPRESSIONS (CTEs)
+-- =====================================================
+
+-- 61. Create an intermediate result that calculates the total amount spent by each customer,
+--     then determine which customers are the top 5 highest spenders.
+with amount_spent as 
+(select customer_id, 
+sum(total_amount) as total_spent from sales 
+group by customer_id)
+select first_name,last_name, total_spent from amount_spent a
+join customers c
+on c.customer_id = a.customer_id
+order by a.total_spent desc limit 5;
+
+-- 62. Create an intermediate result that calculates total quantity sold per product,
+--     then determine which products are the top 3 most sold.
+with quantity_sold as 
+(select 
+product_id, 
+sum(quantity_sold) as total_sold from sales
+group by product_id)
+select product_name,total_sold from quantity_sold q
+join products p
+on p.product_id = q.product_id
+order by total_sold desc limit 3;
+
+-- 63. Create an intermediate result showing total sales per product category,
+--     then determine which category generates the highest revenue.
+with category_sale as (select category, sum(total_amount) as total_sales from sales s
+join products p 
+on s.product_id = p.product_id
+group by category)
+select category, total_sales from category_sale 
+order by total_sales desc
+limit 1;
+
+-- 64. Create an intermediate result that calculates the number of purchases per customer,
+--     then identify customers who purchased more than twice.
+with customer_purchases as (select first_name, last_name, count(*) as no_of_purchases
+from sales s
+join customers c
+on s.customer_id = c.customer_id
+group by first_name, last_name)
+select first_name, last_name, no_of_purchases from customer_purchases 
+where no_of_purchases > 2;
+
+-- 65. Create an intermediate result that calculates the total quantity sold per product,
+--     then determine which products sold more than the average quantity sold.
+with quantity_sold_t as (select product_name, sum(quantity_sold) as total_q from sales s
+join products p
+on s.product_id = p.product_id
+group by product_name)
+select product_name, total_q from quantity_sold_t 
+where total_q > (select avg(quantity_sold) from sales s);
+
+-- 66. Create an intermediate result that calculates total spending per customer,
+--     then determine which customers spent more than the average spending.
+with total_spending as (select first_name, last_name, sum(total_amount) as total_spent from sales s 
+join customers c
+on c.customer_id = s.customer_id
+group by first_name, last_name)
+select first_name, last_name, total_spent  from total_spending 
+where total_spent > (select avg(total_amount) from sales s);
+
+-- 67. Create an intermediate result that calculates total revenue per product,
+--     then list the products ordered from highest revenue to lowest.
+with revenue_per_product as (select product_name, sum(total_amount) as product_revenue from sales s
+join products p
+on p.product_id = s.product_id
+group by product_name)
+select product_name, product_revenue from revenue_per_product 
+order by product_revenue desc;
+
+-- 68. Create an intermediate result showing monthly sales totals,
+--     then determine which month had the highest revenue.
+
+with monthly_sales as 
+(select extract(month from sale_date) as month_of_sale, sum(total_amount) as total_sales from sales s
+group by month_of_sale)
+select month_of_sale, total_sales from monthly_sales 
+order by monthly_sales.total_sales desc
+limit 1;
+
+-- 69. Create an intermediate result that calculates the number of sales per product,
+--     then determine which products were purchased by more than three customers.
+with sales_per_product as (select product_name, s.product_id, count(*) as total_purchases from sales s
+join products p
+on p.product_id = s.product_id
+group by product_name, s.product_id)
+select product_name, total_purchases from sales_per_product 
+where total_purchases > 3;
+
+-- 70. Create an intermediate result showing total quantity sold per product,
+--     then identify products that sold less than the average quantity sold.
+with quantity_sold_t as (select product_name, sum(quantity_sold) as total_q from sales s
+join products p
+on s.product_id = p.product_id
+group by product_name)
+select product_name, total_q from quantity_sold_t 
+where total_q < (select avg(quantity_sold) from sales s);
+
+-- =====================================================
+-- WINDOW FUNCTION QUESTIONS
+-- =====================================================
+
+-- 71. Rank customers based on the total amount they have spent.
+select first_name, last_name, sum(total_amount), rank() over (order by sum(total_amount) desc) as rank_
+from customers c
+join sales s
+on s.customer_id = c.customer_id
+group by first_name, last_name;
+
+-- 72. Rank products based on total quantity sold.
+select product_name, sum(quantity_sold), rank() over (order by sum(quantity_sold) desc)
+from products p
+join sales s
+on s.product_id = p.product_id
+group by product_name;
+
+-- 73. Identify the 3rd highest spending customer.
+with spending_rank as (select customer_id, sum(total_amount), rank() 
+over (order by sum(total_amount) desc) as rank from sales
+group by customer_id)
+select first_name, last_name from spending_rank s
+join customers c 
+on c.customer_id = s.customer_id
+where rank = 3;
+
+-- 74. Identify the 2nd most expensive product.
+
+with product_ranking as (select product_name, price, 
+rank() over (order by price desc) as rank from products)
+select product_name, price from product_ranking 
+where rank = 2;
+
+-- 75. Show the ranking of products within each category based on price.
+select product_name, price, category, 
+rank() over (partition by category order by price desc) 
+from products
+
+-- 76. Show the ranking of customers based on the number of purchases they made.
+select first_name, last_name, count(*), rank() over (order by count(*) desc) as ranking
+from sales s
+join customers c
+on s.customer_id = c.customer_id
+group by first_name, last_name;
+
+-- 77. Show the running total of sales amounts ordered by sale_date.
+select sum(total_amount),sale_date, rank() over (order by sale_date desc)
+from sales
+group by sale_date;
+
+-- 78. Show the previous sale amount for each sale ordered by sale_date.
+select sale_id,sale_date, total_amount, 
+lead(total_amount) over (order by sale_date desc) as previous_sale_amt
+from sales;
+
+-- 79. Show the next sale amount for each sale ordered by sale_date.
+select sale_id,sale_date, total_amount, 
+lag(total_amount) over (order by sale_date desc) as next_sale_amt
+from sales;
+
+-- 80. Divide customers into 4 groups based on total spending.
+select first_name, last_name, sum(total_amount) as total_spending, 
+ntile(4) over (order by sum(total_amount) desc) as customer_group from sales s
+join customers c
+on c.customer_id = s.customer_id
+group by first_name, last_name;
+
+-- =====================================================
+-- ADVANCED ANALYTICAL QUESTIONS
+-- =====================================================
+
+-- 81. Which customers bought products in more than one category?
+select s.product_id, category from sales s
+join products p
+on p.product_id = s.product_id;
+
+select
+first_name, last_name,
+c.customer_id,
+s.product_id,
+category,
+count(distinct category) as category_count
+from sales s
+join products p 
+on s.product_id = p.product_id
+join customers c 
+on s.customer_id = c.customer_id
+group by c.customer_id, first_name, last_name, s.product_id, category
+having count (distinct category) > 1;
+
+-- 82. Which customers purchased products within 7 days of registering?
+select first_name, last_name, registration_date, sale_date from customers c
+join sales s
+on s.customer_id = c.customer_id
+where sale_date between registration_date and registration_date + interval '7 days';
+
+-- 83. Which products have lower stock remaining than the average stock quantity?
+select product_name, stock_quantity from products
+where stock_quantity < (select avg(stock_quantity) from products);
+
+-- 84. Which customers purchased the same product more than once?
+select first_name, s.customer_id, product_name, s.product_id, count(*)
+from sales s
+join customers c 
+on c.customer_id = s.customer_id
+join products p 
+on p.product_id = s.product_id
+group by s.customer_id, s.product_id, first_name, product_name
+having count(*) > 1;
+
+-- 85. Which product categories generated the highest total revenue?
+select category, sum(total_amount) from sales s
+join products p
+on p.product_id = s.product_id
+group by category
+order by sum(total_amount) desc;
+
+-- 86. Which products are among the top 3 most sold products?
+select product_name, sum(quantity_sold) as total_quantity_sold from sales s
+join products p
+on s.product_id = p.product_id
+group by product_name
+order by total_quantity_sold desc
+limit 3;
+
+-- 87. Which customers purchased the most expensive product?
+select first_name, last_name, product_name, price from customers c
+join sales s
+on c.customer_id = s.customer_id
+join products p
+on p.product_id = s.product_id
+where price = (select max(price) from products);
+
+-- 88. Which products were purchased by the highest number of unique customers?
+
+select p.product_id, product_name, count(distinct s.customer_id) as unique_customers
+from products p
+join sales s 
+on p.product_id = s.product_id
+group by p.product_id, p.product_name
+order by  unique_customers desc
+LIMIT 1;
+
+-- 89. Which customers made purchases above the average sale amount?
+select first_name, last_name, sum(total_amount) from sales s
+join customers c
+on c.customer_id = s.customer_id
+group by first_name, last_name 
+having sum(total_amount) > (select avg(total_amount) from sales s);
+
+-- 90. Which customers purchased more products than the average quantity purchased per customer?
+select first_name, last_name, sum(quantity_sold) from sales s
+join customers c
+on c.customer_id = s.customer_id
+group by first_name, last_name 
+having sum(quantity_sold) > (select avg(quantity_sold) from sales s);
+
+
+-- =====================================================
+-- ADVANCED WINDOW + ANALYTICAL PROBLEMS
+-- =====================================================
+
+-- 91. Which customers rank in the top 10% of spending?
+
+with customer_ranking as (select first_name, last_name, sum(total_amount) as total_spent, 
+ntile(10) over (order by sum(total_amount) desc) as percentile
+from sales s
+join customers c
+on s.customer_id = c.customer_id
+group by first_name, last_name)
+select first_name, last_name, percentile from customer_ranking 
+where percentile = 1;
+
+--OR
+
+select first_name, last_name, percent_rank*100 as percentile_position 
+from(select first_name,last_name, sum(total_amount) as total_spent,
+percent_rank() over (order by sum(total_amount) desc) as percent_rank
+from sales s
+join customers c
+on s.customer_id = c.customer_id
+group by first_name, last_name)
+where percent_rank <= 0.1; 
+
+
+
+-- 92. Which products contribute to the top 50% of total revenue?
+
+select product_name, total_revenue,percentile_position from
+(select product_name, sum(total_amount) as total_revenue, 
+ntile(2) over (order by sum(total_amount)desc ) as percentile_position
+from sales s
+join products p
+on p.product_id = s.product_id
+group by product_name)
+where percentile_position = 1;
+
+
+-- 93. Which customers made purchases in consecutive months?
+
+select distinct
+    c.customer_id,
+    c.customer_name
+from (
+    select
+        s.customer_id,
+        date_trunk('month', s.sale_date) as purchase_month,
+        lag(date_trunc('month', s.sale_date)) 
+             over ( s.customer_id order by date_trunc('month', s.sale_date)) as prev_month
+    FROM sales s
+   group by s.customer_id, date_trunc('month', s.sale_date)
+) monthly
+join customers c on monthly.customer_id = c.customer_id
+where purchase_month = prev_month + interval '1 month';
+
+
+-- 94. Which products experienced the largest difference between stock quantity and total quantity sold?
+
+select
+    product_name,
+    i.product_id,
+    i.stock_quantity,
+    sum(s.quantity_sold) as total_quantity_sold,
+    abs(i.stock_quantity - sum(s.quantity_sold)) as stock_vs_sold_difference
+from inventory i
+join sales s 
+on i.product_id = s.product_id
+join products p
+on p.product_id = s.product_id
+group by
+    i.product_id,
+    product_name,
+    i.stock_quantity
+order by stock_vs_sold_difference desc
+limit 1;
+
+
+-- 95. Which customers have spending above the average spending of their membership tier?
+
+with customer_spending as (
+    select
+        c.customer_id,
+        c.first_name,
+        c.membership_status,
+        sum(s.total_amount) as total_spending,
+        avg(sum(s.total_amount)) over (partition by c.membership_status) as tier_avg_spending
+    from customers c
+    join sales s 
+    on c.customer_id = s.customer_id
+    group by
+        c.customer_id,
+        c.first_name,
+        c.membership_status
+)
+select
+    customer_id,
+    first_name,
+    membership_status,
+    total_spending,
+    round(tier_avg_spending, 2) as tier_avg_spending,
+    round(total_spending - tier_avg_spending, 2) as above_avg_by
+from customer_spending
+where total_spending > tier_avg_spending
+order by membership_status, total_spending desc;
+
+-- 96. Which products have higher sales than the average sales within their category?
+with average_sales as (select 
+product_name,
+category,
+s.product_id,
+sum(total_amount) as total_sales,
+avg(sum(total_amount)) over (partition by category) as category_avg_sales
+from sales s
+join products p
+on p.product_id =s.product_id
+group by product_name, category, s.product_id)
+select product_name, category, total_sales, category_avg_sales
+from average_sales 
+where total_sales > category_avg_sales;
+
+-- 97. Which customer made the largest single purchase relative to their total spending?
+select 
+    customer_id,
+    max(total_amount) as largest_single_purchase,
+    sum(total_amount) as total_spending,
+    round(
+        max(total_amount) / sum(total_amount) * 100, 2
+    ) as pct_of_total_spending
+from sales
+group by customer_id
+order by pct_of_total_spending desc;
+
+-- 98. Which products rank among the top 3 most sold products within each category?
+select
+    category,
+    product_id,
+    product_name,
+    total_units_sold,
+    rank_within_category
+from (
+    select
+        p.category,
+        p.product_id,
+        p.product_name,
+        sum(s.quantity_sold) as total_units_sold,
+        rank() over (
+            partition by p.category
+            order by sum(s.quantity_sold) desc
+        ) as rank_within_category
+    from products p
+    join sales s
+    on p.product_id = s.product_id
+    group by p.category, p.product_id, p.product_name
+)
+where rank_within_category <= 3
+order by category asc, rank_within_category asc;
+
+-- 99. Which customers are tied for the highest total spending?
+select first_name, s.customer_id, sum(total_amount), rank() over (order by sum(total_amount) desc ) as rank_
+from sales s
+join customers c
+on c.customer_id = s.customer_id
+group by first_name, s.customer_id
+limit 3;
+
+-- 100. Which products generated sales every year present in the dataset?
+select
+    p.product_id,
+    p.product_name,
+    count(distinct extract(year from s.sale_date)) as years_with_sales,
+    min(s.sale_date) as first_sale_date,
+    max(s.sale_date) as last_sale_date
+from products p
+join sales s
+on p.product_id = s.product_id
+group by p.product_id, p.product_name
+having count(distinct extract(year from s.sale_date)) = (
+    select count(distinct extract(year from s.sale_date))
+    from sales s
+)
+order by p.product_name asc;
+
